@@ -48,3 +48,8 @@ python detector.py
 * **Edge Attacks (Breaker) Defeated**: ~25.0% (Note: The AI natively ignores 75% of breaker attacks due to its inherent understanding of N-1 Contingency redundancy; it only flags critical topological failures).
 
 * **False Alarm Rate (Clean Grid)**: ~2.5%
+
+### 5. Massive Scale & OOD Generalization (v2.1)
+The IDS has been scaled from the IEEE-14 baseline to the massive **IEEE-118 national grid topology**. To overcome Graph Neural Network oversmoothing and Out-of-Distribution (OOD) blindspots at this scale, the architecture includes:
+* **Deep STGAT with Jumping Knowledge (JK):** A 5-layer network that concatenates local 1-hop physics with deep 5-hop physics, allowing the AI to maintain stable baselines across 118 substations without oversmoothing.
+* **Topological DropEdge Regularization:** During training, 5% of transmission lines are dynamically severed while preserving target labels. This forces the AI's attention mechanism to learn true N-1 Contingency rerouting physics, enabling it to catch targeted leaf-node breaker attacks.

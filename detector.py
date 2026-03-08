@@ -22,12 +22,32 @@ def simulate_dynamic_fdia(true_vm, predicted_vm, thresholds):
     return hacked_vm, target_node, attack_magnitude
 
 def topological_breaker_attack(snapshot):
-    """Simulates an Edge Attack: Hacker spoofs a digital breaker, faking a line disconnect."""
+    """
+    Simulates a targeted Edge Attack by intentionally hunting for 
+    critical bottleneck lines (radial connections) to sever.
+    """
     hacked_snapshot = snapshot.clone()
-    num_edges = hacked_snapshot.edge_index.shape[1]
     
-    # Randomly select a transmission line
-    edge_to_drop = random.randint(0, num_edges - 1)
+    # 1. Calculate the 'degree' of every node (how many lines connect to it)
+    # The Logic: We count how many times each node appears in the edge_index
+    node_degrees = torch.bincount(hacked_snapshot.edge_index[0])
+    
+    # 2. Find the "Leaf Nodes" (Substations with only 1 connection)
+    # These are our critical vulnerabilities. If we cut their only line, they die.
+    leaf_nodes = torch.where(node_degrees == 1)[0].tolist()
+    
+    if len(leaf_nodes) > 0:
+        # 3. If a vulnerable leaf node exists, target it specifically
+        target_node = random.choice(leaf_nodes)
+        
+        # Find the exact transmission line connected to this leaf node
+        edge_mask = (hacked_snapshot.edge_index[0] == target_node)
+        edge_to_drop = torch.where(edge_mask)[0][0].item()
+    else:
+        # Fallback if no leaf nodes exist (random attack)
+        num_edges = hacked_snapshot.edge_index.shape[1]
+        edge_to_drop = random.randint(0, num_edges - 1)
+
     u = hacked_snapshot.edge_index[0, edge_to_drop].item()
     v = hacked_snapshot.edge_index[1, edge_to_drop].item()
     
@@ -59,7 +79,7 @@ def calibrate_thresholds(pipeline, model):
     mean_errors = np.mean(all_errors, axis=0)
     std_errors = np.std(all_errors, axis=0)
     
-    dynamic_thresholds = mean_errors + (3 * std_errors)
+    dynamic_thresholds = mean_errors + (4 * std_errors)
     return np.clip(dynamic_thresholds, a_min=1e-4, a_max=None)
 
 # --- LIVE CONTROL ROOM ---

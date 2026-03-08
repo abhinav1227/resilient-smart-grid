@@ -12,7 +12,7 @@ import random
 # Assuming these are updated modular imports (we will refine these next)
 from data.generate import generate_time_series
 from data.preprocess import create_temporal_pyg_data, train_test_split
-from models.gcn import PowerSTGAT
+from models.gcn import DeepPowerSTGAT  
 from attacks.fgsm import constrained_fgsm_attack
 from attacks.pgd import pgd_attack
 from explanation.integrated_gradients import explain_attack
@@ -57,7 +57,7 @@ class GridResiliencePipeline:
         
     def _build_model(self):
         """Constructs the GCN dynamically based on config and grid size."""
-        model = PowerSTGAT(
+        model = DeepPowerSTGAT(
             in_channels=self.config['model']['in_channels'], 
             hidden_dim=self.config['model']['hidden_dim'], 
             out_channels=self.config['model']['out_channels']
@@ -86,8 +86,116 @@ class GridResiliencePipeline:
         self.test_loader = DataLoader(self.test_data, batch_size=self.config['training']['batch_size'], shuffle=False)
         logger.info(f"Data prepared: {len(self.train_data)} temporal train samples, {len(self.test_data)} temporal test samples.")
 
+    def apply_physics_dropedge(self, edge_index, edge_attr, drop_prob=0.05):
+        """
+        Randomly severs 5% of transmission lines during training to force 
+        the AI to learn dynamic N-1 Contingency rerouting physics.
+        """
+        num_edges = edge_index.shape[1]
+        
+        # Create a random boolean mask to keep 95% of the edges
+        mask = torch.rand(num_edges, device=edge_index.device) > drop_prob
+        
+        # Apply the mask simultaneously to the geometry and the physical weights
+        dropped_edge_index = edge_index[:, mask]
+        dropped_edge_attr = edge_attr[mask]
+        
+        return dropped_edge_index, dropped_edge_attr
+    
+    # DropEdge into the training loop, we are going to randomly sever 5% of the transmission lines during every single forward pass.
+    def train(self):
+        """Executes the training loop with Randomized PGD and Topological DropEdge."""
+        logger.info("Starting model training...")
+        
+        adv_training = self.config['training'].get('adversarial_training', False)
+        if adv_training:
+            logger.info("🛡️ PGD Adversarial Training ENABLED. Building a truly robust model...")
+            
+        optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=self.config['model']['lr'],
+            weight_decay=self.config['model']['weight_decay']
+        )
+        criterion = nn.MSELoss()
+        best_loss = float('inf')
+        
+        max_eps = self.config['attack']['epsilon']
+        train_alpha = self.config['training'].get('pgd_alpha', 0.5) 
+        train_iters = self.config['training'].get('pgd_iters', 3)   
+        
+        for epoch in range(1, self.config['model']['epochs'] + 1):
+            self.model.train()
+            train_loss = 0.0
+            
+            for batch in self.train_loader:
+                batch = batch.to(self.device)
+                optimizer.zero_grad()
+                
+                # --- 1. THE TOPOLOGICAL AUGMENTATION (DROPEDGE) ---
+                # We clone the batch so we don't permanently corrupt the dataloader's memory
+                working_batch = batch.clone()
+                
+                aug_edge_index, aug_edge_attr = self.apply_physics_dropedge(
+                    working_batch.edge_index, 
+                    working_batch.edge_attr
+                )
+                
+                working_batch.edge_index = aug_edge_index
+                working_batch.edge_attr = aug_edge_attr
+
+                # --- 2. Forward pass on topologically augmented data ---
+                out_clean = self.model(working_batch)
+                loss_clean = criterion(out_clean, working_batch.y)
+                
+                if adv_training:
+                    # --- 3. Generate a Randomized PGD Attack ---
+                    random_eps = np.random.uniform(low=max_eps * 0.1, high=max_eps)
+                    
+                    for param in self.model.parameters():
+                        param.requires_grad = False
+                        
+                    # Notice we pass 'working_batch' here. The attacker now learns to 
+                    # attack the grid EVEN WHEN a transmission line is already down!
+                    adv_batch = pgd_attack(
+                        data=working_batch, 
+                        model=self.model, 
+                        epsilon=random_eps, 
+                        alpha=train_alpha,
+                        num_iter=train_iters,
+                        criterion=criterion,
+                        bounds=self.config['attack']['feature_bounds']
+                    )
+                    
+                    for param in self.model.parameters():
+                        param.requires_grad = True
+                        
+                    # --- 4. Forward pass on the malicious data ---
+                    out_adv = self.model(adv_batch)
+                    loss_adv = criterion(out_adv, working_batch.y)
+                    
+                    # Combine the losses
+                    loss = 0.5 * loss_clean + 0.5 * loss_adv
+                else:
+                    loss = loss_clean
+
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+                
+            train_loss /= len(self.train_loader)
+            test_loss = self.evaluate(criterion)
+            
+            if epoch % 10 == 0:
+                logger.info(f"Epoch {epoch:03d} | Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f}")
+                
+            if test_loss < best_loss:
+                best_loss = test_loss
+                torch.save(self.model.state_dict(), self.config['model']['save_path'])
+                
+        logger.info("Training complete. Best model saved.")
+
     # pgd adversarial training
-    def train1(self):
+    def train3(self):
         """Executes the training loop with Randomized PGD Adversarial Training."""
         logger.info("Starting model training...")
         
@@ -167,7 +275,7 @@ class GridResiliencePipeline:
         logger.info("Training complete. Best model saved.")
 
     # fgsm adversarial training
-    def train(self):
+    def train2(self):
         """Executes the training loop with Randomized Adversarial Training for robust defense."""
         logger.info("Starting model training...")
         

@@ -1,22 +1,22 @@
 data:
-  grid_case: "case14"      # Change to case14, case30, case118, (39, 57, 145, 300) etc.
-  n_timesteps: 500
+  grid_case: "case118"      # Change to case14, case30, case118, (39, 57, 145, 300) etc.
+  n_timesteps: 2500
   train_ratio: 0.8
   seed: 42
   save_path: "data/generated_data.npz"
 
 model:
   in_channels: 2
-  hidden_dim: 32           # Increased capacity
+  hidden_dim: 64           # Increased capacity
   out_channels: 2
-  lr: 0.005
+  lr: 0.001
   weight_decay: 0.0001
-  epochs: 50
+  epochs: 150
   save_path: "models/trained_gcn.pth"
 
 training:
   batch_size: 32
-  adversarial_training: true
+  adversarial_training: true # Set to true to enable adversarial training
   pgd_alpha: 0.5             # Larger step size for faster training
   pgd_iters: 3               # Only 3 iterations during training to save time
 
