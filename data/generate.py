@@ -7,17 +7,42 @@ logger = logging.getLogger(__name__)
 
 def generate_time_series(net, n_timesteps=500, seed=42, save_path=None):
     """
-    Generates dynamic load profiles and solves power flow for any given grid topology.
+    Generates dynamic load profiles and extracts static physical edge attributes
+    (Resistance and Reactance) for physics-informed neural networks.
     """
     if save_path and os.path.exists(save_path):
-        logger.info(f"Loading existing data from {save_path}")
+        logger.info(f"Loading existing AC physics data from {save_path}")
         data = np.load(save_path)
-        return data['features'], data['targets']
+        return data['features'], data['targets'], data['edge_index'], data['edge_attr']
 
     np.random.seed(seed)
     features, targets = [], []
     num_buses = len(net.bus)
     
+    logger.info(f"Extracting static physical topology and impedance parameters...")
+    
+    # --- UPGRADE: EXTRACT STATIC PHYSICS (EDGE ATTRIBUTES) ---
+    # 1. Get the topological connections
+    from_buses = net.line.from_bus.values
+    to_buses = net.line.to_bus.values
+    
+    # 2. Calculate the total physical Resistance (R) and Reactance (X)
+    r_total = net.line.r_ohm_per_km.values * net.line.length_km.values
+    x_total = net.line.x_ohm_per_km.values * net.line.length_km.values
+    
+    # 3. Create forward directed edges
+    edge_index_forward = np.vstack([from_buses, to_buses])
+    edge_attr_forward = np.column_stack([r_total, x_total])
+    
+    # 4. AC power flows both ways, so we duplicate for backward edges
+    edge_index_backward = np.vstack([to_buses, from_buses])
+    edge_attr_backward = edge_attr_forward.copy() 
+    
+    # 5. Combine into final undirected graph arrays
+    edge_index = np.hstack([edge_index_forward, edge_index_backward])
+    edge_attr = np.vstack([edge_attr_forward, edge_attr_backward])
+    # ---------------------------------------------------------
+
     logger.info(f"Simulating power flow for {num_buses} buses over {n_timesteps} timesteps...")
     
     successful_steps = 0
@@ -30,7 +55,6 @@ def generate_time_series(net, n_timesteps=500, seed=42, save_path=None):
             pp.runpp(net, numba=False)
             successful_steps += 1
         except pp.pandapower.powerflow.LoadflowNotConverged:
-            # Professionally log non-convergence instead of silently failing
             logger.debug(f"Power flow failed to converge at timestep {i}. Skipping.")
             continue
             
@@ -45,9 +69,8 @@ def generate_time_series(net, n_timesteps=500, seed=42, save_path=None):
 
         # EXTRACT BOTH MAGNITUDE AND ANGLE
         v_mag = net.res_bus.vm_pu.values
-        v_ang = net.res_bus.va_degree.values * (np.pi / 180.0) # Convert degrees to radians for better numerical stability in ML models
+        v_ang = net.res_bus.va_degree.values * (np.pi / 180.0) 
         
-        # Stack them to create a 2D target matrix for each timestep
         target = np.column_stack([v_mag, v_ang])
 
         features.append(feat)
@@ -58,7 +81,8 @@ def generate_time_series(net, n_timesteps=500, seed=42, save_path=None):
 
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        np.savez(save_path, features=features, targets=targets)
-        logger.info(f"Successfully generated {successful_steps} samples. Saved to {save_path}")
+        # UPGRADE: Save the new edge arrays into the .npz archive
+        np.savez(save_path, features=features, targets=targets, edge_index=edge_index, edge_attr=edge_attr)
+        logger.info(f"Successfully generated {successful_steps} samples with physics edges. Saved to {save_path}")
 
-    return features, targets
+    return features, targets, edge_index, edge_attr

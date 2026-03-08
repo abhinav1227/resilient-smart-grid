@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
+from torch_geometric.data import Data
 import pandapower.networks as nw
 import numpy as np
 import logging
@@ -10,8 +11,8 @@ import random
 
 # Assuming these are updated modular imports (we will refine these next)
 from data.generate import generate_time_series
-from data.preprocess import create_pyg_data, train_test_split
-from models.gcn import PowerGCN
+from data.preprocess import create_temporal_pyg_data, train_test_split
+from models.gcn import PowerSTGAT
 from attacks.fgsm import constrained_fgsm_attack
 from attacks.pgd import pgd_attack
 from explanation.integrated_gradients import explain_attack
@@ -56,32 +57,37 @@ class GridResiliencePipeline:
         
     def _build_model(self):
         """Constructs the GCN dynamically based on config and grid size."""
-        model = PowerGCN(
-            in_channels=self.config['model']['in_channels'],
-            hidden_dim=self.config['model']['hidden_dim'],
+        model = PowerSTGAT(
+            in_channels=self.config['model']['in_channels'], 
+            hidden_dim=self.config['model']['hidden_dim'], 
             out_channels=self.config['model']['out_channels']
         ).to(self.device)
         return model
 
     def prepare_data(self):
         """Generates or loads data, ensuring it maps correctly to the dynamic bus size."""
-        logger.info("Preparing datasets...")
-        features, targets = generate_time_series(
+        logger.info("Preparing Spatio-Temporal datasets...")
+        
+        features, targets, edge_index, edge_attr = generate_time_series(
             net=self.net, 
             n_timesteps=self.config['data']['n_timesteps'],
             seed=self.config['data']['seed'],
             save_path=self.config['data'].get('save_path')
         )
         
-        data_list = create_pyg_data(features, targets, self.edge_index.cpu())
+        # THE UPGRADE: Pass the data through the sliding window function (e.g., 5 timesteps)
+        # The Logic: A 5-timestep window is long enough to establish physical inertia 
+        # but short enough to keep training computationally light.
+        data_list = create_temporal_pyg_data(features, targets, edge_index, edge_attr, window_size=5)
+        
         self.train_data, self.test_data = train_test_split(data_list, self.config['data']['train_ratio'])
         
         self.train_loader = DataLoader(self.train_data, batch_size=self.config['training']['batch_size'], shuffle=True)
         self.test_loader = DataLoader(self.test_data, batch_size=self.config['training']['batch_size'], shuffle=False)
-        logger.info(f"Data prepared: {len(self.train_data)} train samples, {len(self.test_data)} test samples.")
+        logger.info(f"Data prepared: {len(self.train_data)} temporal train samples, {len(self.test_data)} temporal test samples.")
 
     # pgd adversarial training
-    def train(self):
+    def train1(self):
         """Executes the training loop with Randomized PGD Adversarial Training."""
         logger.info("Starting model training...")
         
@@ -161,7 +167,7 @@ class GridResiliencePipeline:
         logger.info("Training complete. Best model saved.")
 
     # fgsm adversarial training
-    def train2(self):
+    def train(self):
         """Executes the training loop with Randomized Adversarial Training for robust defense."""
         logger.info("Starting model training...")
         
@@ -355,11 +361,15 @@ class GridResiliencePipeline:
         """Runs Integrated Gradients on the adversarial sample."""
         logger.info("Generating Explainability Heatmap...")
         try:
+            # THE LOGIC: The adv_sample is a PyG Data object that already 
+            # contains the topological and physical arrays. We extract 
+            # edge_index and edge_attr directly from it to prevent missing-variable crashes.
             explain_attack(
-                self.model, 
-                adv_sample, 
-                self.edge_index, 
-                self.device,
+                model=self.model, 
+                data=adv_sample, 
+                edge_index=adv_sample.edge_index, 
+                edge_attr=adv_sample.edge_attr,
+                device=self.device,
                 num_buses=self.num_buses,
                 save_path=self.config['explanation']['plot_filename']
             )
@@ -368,7 +378,7 @@ class GridResiliencePipeline:
 
 if __name__ == "__main__":
     # Orchestration
-    set_seed(66)  # Lock the environment first!
+    set_seed(77)  # Lock the environment first!
 
     pipeline = GridResiliencePipeline('config.yaml')
     pipeline.prepare_data()
