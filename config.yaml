@@ -1,14 +1,17 @@
 data:
-  grid_case: "case118"      # Change to case14, case30, case118, (39, 57, 145, 300) etc.
+  grid_case: "case118" # Power grid case to use (e.g., case118, case300)
   n_timesteps: 2500
   train_ratio: 0.8
   seed: 42
-  save_path: "data/generated_data.npz"
+  window_size: 5            # For the STGAT temporal window
+  force_extract: false
+  force_transform: false
 
 model:
   in_channels: 2
-  hidden_dim: 64           # Increased capacity
+  hidden_dim: 64
   out_channels: 2
+  num_layers: 2             # DeepPowerSTGAT depth
   lr: 0.001
   weight_decay: 0.0001
   epochs: 150
@@ -16,17 +19,17 @@ model:
 
 training:
   batch_size: 32
-  adversarial_training: true # Set to true to enable adversarial training
-  pgd_alpha: 0.5             # Larger step size for faster training
-  pgd_iters: 3               # Only 3 iterations during training to save time
+  adversarial_training: true
+  force_retrain: false
+  pgd_alpha: 0.5
+  pgd_iters: 3
 
 attack:
-  epsilon: 1.5          # Now represents a 30% proportional attack (x Step size for the attack)
-  #detection_threshold: 0.015 # L1 Error threshold indicating a grid anomaly(0.05, 0.02, 0.015(tighter threshold))
-  alpha: 0.2                 # The small step size for iterative attack
-  num_iter: 10               # Number of gradient recalculations for the attack
+  epsilon: 0.5             # Logic: Proportional 30% attack margin
+  alpha: 0.2
+  num_iter: 10
   num_samples: 50
-  feature_bounds: [-1.5, 1.5] # Constrain attack to a realistic physical margin i.e, attacker is bound to maximum 30% manipulation
+  feature_bounds: [-1.5, 1.5]
 
 explanation:
   plot_filename: "results/explanation_heatmap.png"

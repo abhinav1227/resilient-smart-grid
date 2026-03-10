@@ -1,18 +1,16 @@
 import torch
+import numpy as np
 
 def get_edge_index(net):
     """
-    Extracts the graph topology from a pandapower network and formats it 
-    as an undirected PyTorch Geometric edge_index tensor.
+    Logic: Converts Pandapower line table into a bidirectional PyG edge_index.
     """
-    sources, targets = [], []
-    for _, line in net.line.iterrows():
-        # Forward connection
-        sources.append(int(line.from_bus))
-        targets.append(int(line.to_bus))
-        
-        # Reverse connection (power grids are undirected graphs)
-        sources.append(int(line.to_bus))
-        targets.append(int(line.from_bus))
-        
-    return torch.tensor([sources, targets], dtype=torch.long)
+    f = net.line.from_bus.values
+    t = net.line.to_bus.values
+    
+    # Concatenate [from->to] and [to->from] for undirected grid physics
+    edge_index = np.vstack([
+        np.concatenate([f, t]),
+        np.concatenate([t, f])
+    ])
+    return torch.tensor(edge_index, dtype=torch.long)
