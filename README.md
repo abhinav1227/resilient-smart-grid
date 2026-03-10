@@ -1,55 +1,65 @@
-# Resilient Grid V2: Spatio-Temporal MLSecOps for AC Power Systems ⚡🛡️
+# Resilient Grid MLSecOps Pipeline
+**Automated Digital Twin for AC Power System Security**
 
-## Overview
-This branch (`v2-physics-upgrade`) represents a major architectural upgrade to the baseline Resilient Grid Intrusion Detection System (IDS). It transitions the AI from a spatial pattern-recognizer into a continuous, physics-informed, self-healing Digital Twin capable of intercepting surgical Advanced Persistent Threats (APTs) in real-time.
 
-## Version 2 Core Upgrades
 
-### 1. Physics-Informed Edge Weights (Ohm's Law Integration)
-The standard Graph Convolutional Network (GCN) has been upgraded to a **Graph Attention Network (GAT)**. The physical Resistance (R) and Reactance (X) of the transmission cables are now directly embedded into the graph's `edge_attr`. The attention mechanism natively calculates the electrical path of least resistance, forcing the AI to strictly obey Kirchhoff's Circuit Laws.
+## Project Overview
+This project represents an industry-grade evolution of the Resilient Grid IDS. It transitions from monolithic research scripts to a **fully orchestrated MLSecOps pipeline**. By leveraging **Spatio-Temporal Graph Attention Networks (STGAT)** and **Prefect Orchestration**, the system acts as a continuous, physics-informed Digital Twin capable of intercepting surgical Advanced Persistent Threats (APTs) on massive topologies like the **IEEE-118 national grid**.
 
-### 2. Spatio-Temporal Modeling (STGAT)
-The AI now processes grid data as a continuous temporal sequence. By wrapping the GAT inside a **Long Short-Term Memory (LSTM)** layer using a 5-timestep sliding window, the neural network calculates the physical inertia and momentum of the power generators, neutralizing cyber-attacks that attempt to mathematically rewrite the system's history.
+## The Engineering Pipeline (Orchestration)
+To ensure production-grade observability and reproducibility, the project is structured as a modular Directed Acyclic Graph (DAG):
 
-### 3. Multi-Vector APT Simulation
-The adversarial attacker (`attacks/pgd.py`) has been upgraded to execute highly constrained, White-Box attacks:
-* **Node Attacks (Targeted FDIA):** Uses a Spatio-Temporal Mask to surgically spoof a single SCADA voltage sensor at the live timestep ($t_0$), mimicking a Stuxnet-style strike.
-* **Edge Attacks (Topological Breaker Spoofing):** Digitally severs transmission lines in the graph topology to test the AI's N-1 Contingency awareness.
+* **Step 1: Extract (Physics Simulation):** High-fidelity AC Power Flow generation via `pandapower`, simulating thousands of timesteps of SCADA logs.
+* **Step 2: Transform (Graph Engineering):** Automated construction of 3D temporal tensors ($Nodes \times Time \times Features$) with sliding-window logic to capture grid inertia.
+* **Step 3: Train (Adversarial ML):** Robust training of the STGAT using **Topological DropEdge** and **PGD Adversarial Training** to ensure N-1 Contingency awareness.
+* **Step 4: Audit (Security Detection):** A live Digital Twin control room that calibrates **4-Sigma dynamic thresholds** to detect FDIA and Breaker attacks.
 
-### 4. Continuous Self-Healing Digital Twin
-The `detector.py` control room is no longer a static script. It operates as a live, continuous loop that:
-* Dynamically calibrates per-node 3-Sigma anomaly thresholds.
-* Automatically quarantines compromised SCADA sensors upon detecting a physics discrepancy.
-* Heals the grid by injecting the AI's trusted physics calculations into the downstream control flow.
-* Generates an automated Security Audit Report.
 
-## Architecture Pipeline
-* `main.py`: Orchestrates the sliding-window data generation and trains the STGAT model.
-* `models/gcn.py`: Houses the `PowerSTGAT` hybrid spatial-temporal architecture.
-* `attacks/pgd.py`: Contains the multi-vector White-Box attack algorithms.
-* `detector.py`: The live simulation environment, active mitigation engine, and security auditor.
 
-## Usage
+## Core Scientific Innovations
 
-**1. Train the Spatio-Temporal Model:**
-Generate the sliding-window dataset and train the physics-informed AI:
-```bash
-python main.py
-```
+### 1. Spatio-Temporal Physics (Deep STGAT)
+The architecture combines spatial and temporal modeling to obey Kirchhoff’s Laws and generator momentum:
+* **LSTM Encoder:** Captures the physical inertia of the grid over a 5-timestep window, preventing attackers from "rewriting" system history.
+* **Deep GAT with Jumping Knowledge (JK):** A 5-layer attention mechanism that embeds physical Resistance ($R$) and Reactance ($X$) as edge attributes, allowing the AI to scale to 118+ buses without mathematical oversmoothing.
 
-**2. 2. Launch the Self-Healing IDS:**
-```bash
-python detector.py
-```
 
-## Baseline Security Audit Performance
-* **Node Attacks (FDIA) Defeated**: ~100.0%
 
-* **Edge Attacks (Breaker) Defeated**: ~25.0% (Note: The AI natively ignores 75% of breaker attacks due to its inherent understanding of N-1 Contingency redundancy; it only flags critical topological failures).
+### 2. Multi-Vector APT Simulation
+* **Surgically Targeted FDIA:** A White-Box attacker that uses a Spatio-Temporal mask to spoof a single SCADA sensor at the live timestep ($t_0$), mimicking a Stuxnet-style strike.
+* **Topological Breaker Attacks:** Simulates the digital severing of transmission lines in the graph topology to test the AI's N-1 Contingency awareness.
 
-* **False Alarm Rate (Clean Grid)**: ~2.5%
+## Security & Mitigation Logic
+The `detector.py` engine operates as a live, self-healing loop:
+* **Dynamic Calibration:** Establish per-node anomaly thresholds based on statistical noise floors.
+* **Quarantine & Heal:** Upon detecting a physics discrepancy, the system isolates compromised sensors and overwrites them with the AI's trusted physics predictions.
+* **Resilience Insight:** The pipeline distinguishes between "Security Failures" and "Physical Resilience," acknowledging when the grid's N-1 redundancy absorbs a strike without voltage collapse.
 
-### 5. Massive Scale & OOD Generalization (v2.1)
-The IDS has been scaled from the IEEE-14 baseline to the massive **IEEE-118 national grid topology**. To overcome Graph Neural Network oversmoothing and Out-of-Distribution (OOD) blindspots at this scale, the architecture includes:
-* **Deep STGAT with Jumping Knowledge (JK):** A 5-layer network that concatenates local 1-hop physics with deep 5-hop physics, allowing the AI to maintain stable baselines across 118 substations without oversmoothing.
-* **Topological DropEdge Regularization:** During training, 5% of transmission lines are dynamically severed while preserving target labels. This forces the AI's attention mechanism to learn true N-1 Contingency rerouting physics, enabling it to catch targeted leaf-node breaker attacks.
+## Security Audit Performance
+| Metric | Performance | Engineering Logic |
+| :--- | :--- | :--- |
+| **Node Detection (FDIA)** | **~100%** | Caught via physical discrepancy vs. Digital Twin. |
+| **Edge Detection (Breaker)**| **Variable** | Only flags attacks causing physical shifts; ignores redundant rerouting. |
+| **False Alarm Rate** | **< 1%** | Minimized via calibrated 4-Sigma dynamic thresholding. |
+
+## Getting Started
+
+1.  **Start the Orchestration UI:**
+    ```bash
+    prefect server start
+    ```
+2.  **Run the End-to-End Pipeline:**
+    ```bash
+    python pipeline.py
+    ```
+    *Monitor logs, execution graphs, and security artifacts at `http://127.0.0.1:4200`.*
+
+---
+
+## Project Structure
+* `pipeline.py`: The Prefect orchestrator and entry point.
+* `detector.py`: The Digital Twin security auditor and mitigation engine.
+* `data/`: Modular scripts for physics simulation and tensor preprocessing.
+* `models/`: `DeepPowerSTGAT` architecture with Jumping Knowledge.
+* `attacks/`: White-box PGD and APT simulation algorithms.
+* `explanation/`: Integrated Gradients (Captum) for attack attribution.
